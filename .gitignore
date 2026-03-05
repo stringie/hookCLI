@@ -1,0 +1,18 @@
+# PyInstaller build artifacts
+build/
+dist/
+*.exe
+__pycache__/
+*.pyc
+
+# PyInstaller spec files (auto-generated, keep hookCLI.spec)
+hook_cli.spec
+hookCLI2.spec
+
+# LunaHook binaries (not ours to distribute — download separately)
+lunahook/
+*.dll
+
+# IDE
+.vscode/
+.idea/
