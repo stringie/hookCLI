@@ -27,6 +27,7 @@ copy "lunahook\LunaHook64.dll"        "dist\lunahook\" /Y
 copy "lunahook\LunaHook32.dll"        "dist\lunahook\" /Y
 copy "lunahook\shareddllproxy64.exe"  "dist\lunahook\" /Y
 copy "lunahook\shareddllproxy32.exe"  "dist\lunahook\" /Y
+copy "LICENSE" "dist\" /Y
 
 echo [4/4] Done!
 echo.
