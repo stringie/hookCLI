@@ -3,7 +3,7 @@ REM ===================================================================
 REM Build hookCLI.exe using PyInstaller
 REM
 REM This creates:
-REM   dist/hookCLI/
+REM   dist/
 REM       hookCLI.exe
 REM       lunahook/
 REM           LunaHost64.dll
@@ -19,14 +19,14 @@ pip install pyinstaller
 echo [2/4] Building hookCLI.exe...
 pyinstaller --noconfirm --onefile --console --name hookCLI hook_cli.py
 
-echo [3/4] Copying LunaHook DLLs into dist folder...
+echo [3/4] Copying LunaHook binaries into dist folder...
 mkdir "dist\lunahook" 2>nul
 
-copy "..\files\lunahook\LunaHost64.dll"  "dist\lunahook\" /Y
-copy "..\files\lunahook\LunaHook64.dll"  "dist\lunahook\" /Y
-copy "..\files\lunahook\LunaHook32.dll"  "dist\lunahook\" /Y
-copy "..\files\shareddllproxy64.exe"     "dist\lunahook\" /Y
-copy "..\files\shareddllproxy32.exe"     "dist\lunahook\" /Y
+copy "lunahook\LunaHost64.dll"        "dist\lunahook\" /Y
+copy "lunahook\LunaHook64.dll"        "dist\lunahook\" /Y
+copy "lunahook\LunaHook32.dll"        "dist\lunahook\" /Y
+copy "lunahook\shareddllproxy64.exe"  "dist\lunahook\" /Y
+copy "lunahook\shareddllproxy32.exe"  "dist\lunahook\" /Y
 
 echo [4/4] Done!
 echo.
