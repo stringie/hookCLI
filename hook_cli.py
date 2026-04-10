@@ -44,6 +44,7 @@ import subprocess
 import sys
 import time
 import threading
+import queue
 from ctypes import (
     CDLL,
     CFUNCTYPE,
@@ -67,7 +68,7 @@ from ctypes.wintypes import DWORD, LPCWSTR
 
 # ─── Version ────────────────────────────────────────────────────────────────
 
-__version__ = "1.0.0"
+__version__ = "1.0.1"
 
 
 # ─── Resolve base directory (works for both .py and PyInstaller .exe) ───────
@@ -185,52 +186,75 @@ def process_exists(pid: int) -> bool:
 # ─── Output formatting ──────────────────────────────────────────────────────
 
 class OutputFormatter:
-    """Handles text output in various formats."""
+    """Handles text output in various formats via an async worker thread."""
 
     def __init__(self, fmt="text", outfile=None):
         self.fmt = fmt
         self._lock = threading.Lock()
+        self._queue = queue.Queue()
+        self._stop_event = threading.Event()
+        
         if outfile:
             self._fp = open(outfile, "a", encoding="utf-8")
         else:
             self._fp = None
+            
+        self._worker_thread = threading.Thread(target=self._worker, daemon=True)
+        self._worker_thread.start()
+
+    def _worker(self):
+        """Consume lines from the queue and print them.
+        
+        Using a separate thread prevents 'print' (which blocks on stdout pipe) 
+        from ever stalling the DLL's internal communication thread.
+        """
+        while not self._stop_event.is_set():
+            try:
+                line = self._queue.get(timeout=0.1)
+                print(line, flush=True)
+                if self._fp:
+                    self._fp.write(line + "\n")
+                    self._fp.flush()
+                self._queue.task_done()
+            except queue.Empty:
+                continue
+            except Exception as e:
+                # Fallback to stderr if something goes wrong with printing
+                sys.stderr.write(f"ERROR in OutputFormatter worker: {e}\n")
 
     def emit_text(self, hookcode, hookname, tp, text):
-        with self._lock:
-            if self.fmt == "json":
-                obj = {
-                    "type": "text",
-                    "hookcode": hookcode,
-                    "hookname": hookname,
-                    "pid": tp.processId,
-                    "addr": f"0x{tp.addr:X}",
-                    "ctx": f"0x{tp.ctx:X}",
-                    "ctx2": f"0x{tp.ctx2:X}",
-                    "text": text,
-                    "timestamp": time.time(),
-                }
-                line = json.dumps(obj, ensure_ascii=False)
-            else:
-                line = f"[{hookcode}] {text}"
-            self._write(line)
+        if self.fmt == "json":
+            obj = {
+                "type": "text",
+                "hookcode": hookcode,
+                "hookname": hookname,
+                "pid": tp.processId,
+                "addr": f"0x{tp.addr:X}",
+                "ctx": f"0x{tp.ctx:X}",
+                "ctx2": f"0x{tp.ctx2:X}",
+                "text": text,
+                "timestamp": time.time(),
+            }
+            line = json.dumps(obj, ensure_ascii=False)
+        else:
+            line = f"[{hookcode}] {text}"
+        self._write(line)
 
     def emit_event(self, event_type, **kwargs):
-        with self._lock:
-            if self.fmt == "json":
-                obj = {"type": event_type, "timestamp": time.time(), **kwargs}
-                line = json.dumps(obj, ensure_ascii=False)
-            else:
-                detail = ", ".join(f"{k}={v}" for k, v in kwargs.items())
-                line = f"[{event_type.upper()}] {detail}"
-            self._write(line)
+        if self.fmt == "json":
+            obj = {"type": event_type, "timestamp": time.time(), **kwargs}
+            line = json.dumps(obj, ensure_ascii=False)
+        else:
+            detail = ", ".join(f"{k}={v}" for k, v in kwargs.items())
+            line = f"[{event_type.upper()}] {detail}"
+        self._write(line)
 
     def _write(self, line):
-        print(line, flush=True)
-        if self._fp:
-            self._fp.write(line + "\n")
-            self._fp.flush()
+        self._queue.put(line)
 
     def close(self):
+        self._stop_event.set()
+        self._worker_thread.join(timeout=1.0)
         if self._fp:
             self._fp.close()
 
@@ -247,6 +271,10 @@ class HookCLI:
         self._attached_pids = []
         self._all_disconnected = threading.Event()
         self._all_disconnected.set()  # starts as set (no connections yet)
+        
+        # Internal state for filtering
+        self._last_texts = {} # tp -> text
+        self._hookcode_handle_counts = {} # hookcode -> count
 
         host_dll = os.path.join(dll_dir, "LunaHost64.dll")
         if not os.path.isfile(host_dll):
@@ -323,7 +351,7 @@ class HookCLI:
                 False,  # changecharset
                 "",     # changefont_font
                 0,      # displaymode
-                True,   # wait
+                False,  # wait (CRITICAL: set to False to prevent lagging game thread)
                 False,  # clearText
                 False,  # changefontsize_use
                 0.0     # changefontsize
@@ -338,6 +366,21 @@ class HookCLI:
 
     def _on_new_hook(self, hookcode, hookname_bytes, tp, is_embedable):
         hookname = hookname_bytes.decode("utf-8", errors="replace") if hookname_bytes else ""
+        
+        # --- FILTER: Blacklisted noisy hooks (Unity-specific) ---
+        # We check both hookname and hookcode because JIT signatures usually live in hookcode.
+        blacklist = ["op_Inequality", "op_Equality", "String:Equals", "GetHashCode", "get_Item", "CompareOrdinal"]
+        full_id = (hookname + "|" + (hookcode or "")).lower()
+        if any(b.lower() in full_id for b in blacklist):
+            return
+
+        # --- FILTER: Handle Bloat ---
+        count = self._hookcode_handle_counts.get(hookcode, 0) + 1
+        self._hookcode_handle_counts[hookcode] = count
+        if count > 50:
+            if count == 51:
+                self.fmt.emit_event("info", message=f"Filtering noisy hook with too many contexts: {hookname} ({hookcode})")
+            return
 
         # Mirror LunaTranslator: sync this thread so we receive text output from it.
         if hasattr(self.host, "Luna_SyncThread"):
@@ -365,7 +408,22 @@ class HookCLI:
         )
 
     def _on_output(self, hookcode, hookname_bytes, tp, text):
+        if not text:
+            return
+            
+        # --- FILTER: Deduplication ---
+        if text == self._last_texts.get(tp):
+            return
+        self._last_texts[tp] = text
+        
         hookname = hookname_bytes.decode("utf-8", errors="replace") if hookname_bytes else ""
+
+        # --- FILTER: Safety-net blacklist check ---
+        blacklist = ["op_Inequality", "op_Equality", "String:Equals", "GetHashCode", "get_Item", "CompareOrdinal"]
+        full_id = (hookname + "|" + (hookcode or "")).lower()
+        if any(b.lower() in full_id for b in blacklist):
+            return
+
         self.fmt.emit_text(hookcode, hookname, tp, text)
 
     def _on_info(self, info_type, message):
