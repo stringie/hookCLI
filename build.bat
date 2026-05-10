@@ -9,8 +9,8 @@ REM       lunahook/
 REM           LunaHost64.dll
 REM           LunaHook64.dll
 REM           LunaHook32.dll
-REM           shareddllproxy64.exe
-REM           shareddllproxy32.exe
+REM           LunaSubprocess64.exe
+REM           LunaSubprocess32.exe
 REM ===================================================================
 
 echo [1/4] Installing PyInstaller...
@@ -25,8 +25,8 @@ mkdir "dist\lunahook" 2>nul
 copy "lunahook\LunaHost64.dll"        "dist\lunahook\" /Y
 copy "lunahook\LunaHook64.dll"        "dist\lunahook\" /Y
 copy "lunahook\LunaHook32.dll"        "dist\lunahook\" /Y
-copy "lunahook\shareddllproxy64.exe"  "dist\lunahook\" /Y
-copy "lunahook\shareddllproxy32.exe"  "dist\lunahook\" /Y
+copy "lunahook\LunaSubprocess64.exe"  "dist\lunahook\" /Y
+copy "lunahook\LunaSubprocess32.exe"  "dist\lunahook\" /Y
 copy "LICENSE" "dist\" /Y
 
 echo [4/4] Done!

@@ -63,8 +63,8 @@ hookCLI/
 │   ├── LunaHost64.dll   # Host library (loaded by hookCLI)
 │   ├── LunaHook64.dll   # Injected into 64-bit games
 │   ├── LunaHook32.dll   # Injected into 32-bit games
-│   ├── shareddllproxy64.exe  # DLL injector (64-bit)
-│   └── shareddllproxy32.exe  # DLL injector (32-bit)
+│   ├── LunaSubprocess64.exe  # DLL injector (64-bit)
+│   └── LunaSubprocess32.exe  # DLL injector (32-bit)
 ├── LICENSE              # GPLv3
 └── README.md
 ```

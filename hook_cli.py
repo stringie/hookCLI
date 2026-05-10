@@ -30,8 +30,8 @@ The following files must be in a "lunahook/" subfolder next to this exe:
     lunahook/LunaHost64.dll
     lunahook/LunaHook64.dll
     lunahook/LunaHook32.dll
-    lunahook/shareddllproxy64.exe
-    lunahook/shareddllproxy32.exe
+    lunahook/LunaSubprocess64.exe
+    lunahook/LunaSubprocess32.exe
 """
 
 import argparse
@@ -274,7 +274,6 @@ class HookCLI:
         
         # Internal state for filtering
         self._last_texts = {} # tp -> text
-        self._hookcode_handle_counts = {} # hookcode -> count
 
         host_dll = os.path.join(dll_dir, "LunaHost64.dll")
         if not os.path.isfile(host_dll):
@@ -366,26 +365,6 @@ class HookCLI:
 
     def _on_new_hook(self, hookcode, hookname_bytes, tp, is_embedable):
         hookname = hookname_bytes.decode("utf-8", errors="replace") if hookname_bytes else ""
-        
-        # --- FILTER: Blacklisted noisy hooks (Unity-specific) ---
-        # We check both hookname and hookcode because JIT signatures usually live in hookcode.
-        blacklist = ["op_Inequality", "op_Equality", "String:Equals", "GetHashCode", "get_Item", "CompareOrdinal"]
-        full_id = (hookname + "|" + (hookcode or "")).lower()
-        if any(b.lower() in full_id for b in blacklist):
-            return
-
-        # --- FILTER: Handle Bloat ---
-        count = self._hookcode_handle_counts.get(hookcode, 0) + 1
-        self._hookcode_handle_counts[hookcode] = count
-        if count > 50:
-            if count == 51:
-                self.fmt.emit_event("info", message=f"Filtering noisy hook with too many contexts: {hookname} ({hookcode})")
-            return
-
-        # Mirror LunaTranslator: sync this thread so we receive text output from it.
-        if hasattr(self.host, "Luna_SyncThread"):
-            self.host.Luna_SyncThread(tp, True)
-            
 
         self.fmt.emit_event(
             "hook_found",
@@ -417,12 +396,6 @@ class HookCLI:
         self._last_texts[tp] = text
         
         hookname = hookname_bytes.decode("utf-8", errors="replace") if hookname_bytes else ""
-
-        # --- FILTER: Safety-net blacklist check ---
-        blacklist = ["op_Inequality", "op_Equality", "String:Equals", "GetHashCode", "get_Item", "CompareOrdinal"]
-        full_id = (hookname + "|" + (hookcode or "")).lower()
-        if any(b.lower() in full_id for b in blacklist):
-            return
 
         self.fmt.emit_text(hookcode, hookname, tp, text)
 
@@ -488,7 +461,7 @@ class HookCLI:
 
         if self.host.Luna_CheckIfNeedInject(pid):
             dll_path = os.path.join(self.dll_dir, f"LunaHook{arch}.dll")
-            injector = os.path.join(self.dll_dir, f"shareddllproxy{arch}.exe")
+            injector = os.path.join(self.dll_dir, f"LunaSubprocess{arch}.exe")
 
             if not os.path.isfile(dll_path):
                 print(f"ERROR: Cannot find {dll_path}", file=sys.stderr)
