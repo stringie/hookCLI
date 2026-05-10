@@ -299,7 +299,7 @@ class HookCLI:
         h.Luna_CheckIfNeedInject.argtypes = (DWORD,)
         h.Luna_CheckIfNeedInject.restype = c_bool
 
-        h.Luna_Settings.argtypes = (c_int, c_bool, c_int, c_int, c_int)
+        h.Luna_Settings.argtypes = (c_int, c_bool, c_int, c_int, c_int, c_bool)
 
         h.Luna_InsertHookCode.argtypes = (DWORD, LPCWSTR)
         h.Luna_InsertHookCode.restype = c_bool
@@ -316,9 +316,10 @@ class HookCLI:
         h.Luna_AllocString.argtypes = (c_wchar_p,)
         h.Luna_AllocString.restype = c_void_p
 
-        h.Luna_EmbedSettings.argtypes = (
+        h.Luna_SettingsEx.argtypes = (
             DWORD, c_uint32, c_uint8, c_bool, c_wchar_p,
             c_uint32, c_bool, c_bool, c_bool, c_float,
+            c_bool
         )
         h.Luna_CheckIsUsingEmbed.argtypes = (ThreadParam,)
         h.Luna_CheckIsUsingEmbed.restype = c_bool
@@ -340,10 +341,10 @@ class HookCLI:
         if getattr(self, "_startup_auto_hooks", False):
             self.insert_pc_hooks(pid)
 
-        # Mirror LunaTranslator: supply default EmbedSettings upon connecting.
-        # Luna's onprocconnect calls flashembedsettings(pid) at this point.
-        if hasattr(self.host, "Luna_EmbedSettings"):
-            self.host.Luna_EmbedSettings(
+        # Mirror LunaTranslator: supply default SettingsEx upon connecting.
+        # Luna's onprocconnect calls set_settings_ex(pid) at this point.
+        if hasattr(self.host, "Luna_SettingsEx"):
+            self.host.Luna_SettingsEx(
                 pid,
                 2000,   # timeout_translate (2000ms)
                 2,      # charset (Shift-JIS/etc)
@@ -353,7 +354,8 @@ class HookCLI:
                 False,  # wait (CRITICAL: set to False to prevent lagging game thread)
                 False,  # clearText
                 False,  # changefontsize_use
-                0.0     # changefontsize
+                0.0,    # changefontsize
+                True    # use_embed (New in v2.0)
             )
 
     def _on_disconnect(self, pid):
@@ -442,7 +444,7 @@ class HookCLI:
         self._keepref.extend(callbacks)
         self.host.Luna_Start(*callbacks)
         self.host.Luna_ResetLang()
-        self.host.Luna_Settings(delay, False, codepage, max_buffer, max_history)
+        self.host.Luna_Settings(delay, False, codepage, max_buffer, max_history, True)
         self.fmt.emit_event("engine_started", delay=delay, codepage=codepage)
 
     def attach(self, pid, is_64bit=None):
